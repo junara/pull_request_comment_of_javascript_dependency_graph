@@ -1,0 +1,77 @@
+name: Add js_dependency analysis report in pull request comment
+author: junara
+description: Add js_dependency analysis report in pull request comment
+inputs:
+  src_path:
+    description: 'src path'
+    required: true
+    default: src
+  child_analyze_level:
+    description: 'child analyze level'
+    required: false
+    default: 2
+  parent_analyze_level:
+    description: 'parent analyze level'
+    required: false
+    default: 2
+  name_level:
+    description: 'name level'
+    required: false
+    default: 2
+  alias_paths:
+    description: 'alias paths'
+    required: false
+    default: "@:./pages"
+  exclude_output_names:
+    description: 'exclude output names'
+    required: false
+    default: "__tests__"
+  github_token:
+    description: 'github_token'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+    - uses: ruby/setup-ruby@359bebbc29cbe6c87da6bc9ea3bc930432750108
+      with:
+        ruby-version: '3.1'
+    - run: gem install js_dependency
+      shell: bash
+    - uses: technote-space/get-diff-action@c747e3f4e5fe6ab4870031a8e33721e61914140c
+    - run: echo ${{ env.GIT_DIFF }}
+      shell: bash
+    - name: Create report
+      env:
+        SRC_PATH: ${{ inputs.src_path }}
+        CHILD_ANALYZE_LEVEL: ${{ inputs.child_analyze_level }}
+        PARENT_ANALYZE_LEVEL: ${{ inputs.parent_analyze_level }}
+        NAME_LEVEL: ${{ inputs.name_level }}
+        ALIAS_PATHS: ${{ inputs.alias_paths }}
+        IDENTIFIER: js_dependency_pull_request_comments_${{ github.ref }}
+        EXCLUDE_OUTPUT_NAMES: ${{ inputs.exclude_output_names }}
+      run: |
+        cat << EOF > ${{ github.sha }}_comment
+        `js_dependency export_markdown_report -s ${SRC_PATH} -t ${{ env.GIT_DIFF }} -a ${ALIAS_PATHS} -c ${CHILD_ANALYZE_LEVEL} -p ${PARENT_ANALYZE_LEVEL} --identifier ${IDENTIFIER} --exclude-output-names ${EXCLUDE_OUTPUT_NAMES}`
+        
+        ### Analyzed commit
+        ${{ github.sha }}
+        EOF
+      shell: bash
+      if: env.GIT_DIFF
+    - id: get-comment-body
+      run: |
+        body="$(cat ${{ github.sha }}_comment)"
+        body="${body//'%'/'%25'}"
+        body="${body//$'\n'/'%0A'}"
+        body="${body//$'\r'/'%0D'}"
+        echo "::set-output name=body::$body"
+      shell: bash
+      if: env.GIT_DIFF
+    - name: Upsert JsDependency PR comment
+      uses: thollander/actions-comment-pull-request@686ab1cab89e0f715a44a0d04b9fdfdd4f33d751
+      with:
+        message: ${{ steps.get-comment-body.outputs.body }}
+        comment_includes: "<!-- js_dependency_pull_request_comments_${{ github.ref }} -->"
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      if: env.GIT_DIFF
